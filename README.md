@@ -2,7 +2,7 @@
 
 **A spatial biology toolkit that takes you from a raw tissue slide all the way to biology**
 
-[KRONOS2](https://huggingface.co/MahmoodLab/KRONOS2) | [CARTA](https://huggingface.co/MahmoodLab/CARTA) | Technical report (coming soon) | [Cite](#reference)
+[KRONOS2](https://huggingface.co/MahmoodLab/KRONOS2) | [Cite](#reference) | [Get Updates](https://forms.gle/onX2Qv99ryTfH2Ao8) | Technical report (coming soon)
 
 ## What is CORAL?
 
