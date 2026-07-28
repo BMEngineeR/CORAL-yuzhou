@@ -46,9 +46,8 @@ _WEIGHTS_FILE = "carta_tissue.pt"
 _INSTALL_MSG = (
     "CARTA tissue segmentation needs the optional `carta` extra (torch + "
     "torchvision) — install it: `uv sync --extra carta` (or "
-    "`pip install coral[carta]`). The weights repo "
-    "MahmoodLab/CARTA is PRIVATE — request access and "
-    "`huggingface-cli login` (or set HF_TOKEN), or point at a local "
+    "`pip install coral[carta]`). Weights download automatically from the "
+    "public Hugging Face repo MahmoodLab/CARTA, or point at a local "
     "checkpoint via CARTA_TISSUE_WEIGHTS / from_pretrained(<path>)."
 )
 _LOAD_MSG = (
@@ -71,8 +70,8 @@ def _download_hf_weights(repo_id: str) -> str:
     except Exception as exc:  # noqa: BLE001 — surface an actionable hint
         raise RuntimeError(
             f"Could not fetch CARTA weights from hf_hub:{repo_id} "
-            f"({_WEIGHTS_FILE}). It is a PRIVATE repo — `huggingface-cli "
-            f"login` with access, or set CARTA_TISSUE_WEIGHTS to a local .pt."
+            f"({_WEIGHTS_FILE}). The repo is public — check your network "
+            f"connection, or set CARTA_TISSUE_WEIGHTS to a local .pt."
         ) from exc
 
 
@@ -168,8 +167,8 @@ class CartaTissueSegmenter(BaseTissueSegmenter):
         """Load the vendored CARTA DeepLab model into the segmenter.
 
         Weights resolve in this order: the ``CARTA_TISSUE_WEIGHTS`` env var (a
-        local ``.pt``) → a ``"hf_hub:<repo>"`` ref (downloaded with the
-        caller's HF token) → otherwise ``ref`` is treated as a local path.
+        local ``.pt``) → a ``"hf_hub:<repo>"`` ref (downloaded from the public
+        Hub) → otherwise ``ref`` is treated as a local path.
 
         Args:
             ref: ``"hf_hub:<repo>"`` or a local ``.pt`` path.
@@ -212,8 +211,8 @@ class CartaTissueSegmenter(BaseTissueSegmenter):
             raise FileNotFoundError(
                 f"CARTA tissue weights not found at {weights_path!r}. Point "
                 f"CARTA_TISSUE_WEIGHTS at a valid .pt, pass a local path to "
-                f"from_pretrained(), or use the default hf_hub ref with HF "
-                f"access."
+                f"from_pretrained(), or use the default public hf_hub ref "
+                f"(MahmoodLab/CARTA)."
             )
 
         from coral.tissue._carta.config import load_config

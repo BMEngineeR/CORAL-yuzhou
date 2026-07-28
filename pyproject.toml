@@ -76,9 +76,8 @@ cells = [
 # repo). Opt-in: `uv sync --extra carta` / `pip install coral[carta]`. Pins match
 # CARTA's own runtime (torch>=2.0 / torchvision>=0.15, no upper bound) so carta
 # co-resolves with the other torch extras without perturbing their locked
-# versions. Weights come from the private HF repo
-# MahmoodLab/CARTA (needs a token) or a local .pt via the
-# CARTA_TISSUE_WEIGHTS env var.
+# versions. Weights come from the public HF repo MahmoodLab/CARTA (no token
+# required) or a local .pt via the CARTA_TISSUE_WEIGHTS env var.
 carta = [
     "torch>=2.0",
     "torchvision>=0.15",
@@ -265,7 +264,7 @@ markers = [
     "benchmark: speed + memory benchmark, parametrized over HDD vs SSD storage tiers",
     "soft: judgment-dependent test (e.g. tissue vs background) — on failure, consult Anurag rather than auto-fixing",
     "cellpose: runs the real Cellpose model (needs the `cells` extra + GPU + weights); skipped otherwise",
-    "carta: runs the real CARTA tissue model (needs the `carta` extra + weights via HF token or CARTA_TISSUE_WEIGHTS); skipped otherwise",
+    "carta: runs the real CARTA tissue model (needs the `carta` extra + public HF weights or CARTA_TISSUE_WEIGHTS); skipped otherwise",
     "kronos2: runs the real KRONOS2 model (needs the `kronos2` extra + GPU + weights); skipped otherwise",
     "uni: runs the real UNI model (needs the `uni` extra + GPU + weights); skipped otherwise",
     "camae: runs the real CA-MAE model (needs the `camae` extra + GPU + weights); skipped otherwise",
