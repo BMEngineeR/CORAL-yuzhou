@@ -153,3 +153,6 @@ tutorial-*-output/
 tests/data/**/__pycache__/
 tests/data/**/*.pyc
 patch_legend_compare/
+
+# ST ingest tutorial working dir (unpacked bundles + output stores)
+tutorials/_st_ingest_work/
