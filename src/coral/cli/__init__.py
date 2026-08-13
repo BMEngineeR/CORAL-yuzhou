@@ -24,6 +24,7 @@ from coral.cli import (
     cell,
     extract,
     ingest,
+    ingest_st,
     patch,
     status,
     tissue,
@@ -37,6 +38,10 @@ app = typer.Typer(
 app.command(name="ingest", help="Convert raw images to canonical OME-Zarr")(
     ingest.ingest
 )
+app.command(
+    name="ingest-st",
+    help="Convert spatial-transcriptomics samples to canonical OME-Zarr",
+)(ingest_st.ingest_st)
 app.command(name="tissue", help="Otsu tissue detection or user-mask import")(
     tissue.tissue
 )

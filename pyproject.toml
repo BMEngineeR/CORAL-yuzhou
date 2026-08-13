@@ -155,6 +155,16 @@ kronos1 = [
     "huggingface-hub>=0.34",
     "setuptools>=70",
 ]
+# Spatial-transcriptomics ingest (`coral ingest-st`) — the AnnData table stack.
+# The image/geometry deps (tifffile, scikit-image, geopandas, shapely, pandas,
+# pyarrow) are already core; this extra adds only the single-cell table stack.
+# Native CosMx/G4X readers reuse these — no SpatialData/rasterio/pyvips.
+# Install with `uv sync --extra st` / `pip install coral[st]`.
+st = [
+    "anndata>=0.10",
+    "scanpy>=1.9",
+    "h5py>=3.12",
+]
 
 [build-system]
 requires = ["hatchling"]
