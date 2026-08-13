@@ -113,3 +113,23 @@ Every store's `config.json` gets a `pixel_size` provenance block under
   `mpp = NaN`. The `pixel_size_um_estimated` (3.2357) should be used instead.
 
 The first three are done; the last three are known, isolated follow-ups.
+
+## Known issues from brute-force testing
+
+A stress test of the resolver and the `--mpp` path found one root cause with
+several faces: **nothing validates that the value is a finite POSITIVE number.**
+The guardrail verifies provenance and agreement, but never sanity of the value
+itself, so garbage flows straight to the store.
+
+| # | sev | where | problem | observed |
+|---|-----|-------|---------|----------|
+| P1 | HIGH | `resolve_pixel_size` | negative / NaN / inf `read_value` accepted, `needs_confirm=False` | `-0.5 → value=-0.5`, `nan → nan`, `inf → inf` |
+| P2 | MED | same | `read_value == 0.0` treated as "no value" (falsy `if read_value:`) | `tier=unknown` |
+| P3 | HIGH | `ingest_one` `--mpp` | override not validated | `--mpp -0.5/nan/inf` → store gets it verbatim |
+| P3b | HIGH | same | `--mpp 0` silently becomes `1.0` (falsy `resolved_px`) | store `mpp = 1.0` |
+| P4 | HIGH | HEST branch + resolver | `embedded (NaN) or estimated` short-circuits to NaN; resolver proceeds | store `mpp = NaN` |
+| P5 | MED | cross-checks | circular default check: read value == the platform constant and no independent cross → "value vs itself" trivially agrees | misleading audit trail (not a wrong decision) |
+
+Planned fix: a single `math.isfinite(v) and v > 0` gate in `resolve_pixel_size`
+(ignore an invalid read → fall to default/unknown, needs_confirm) and on the
+`--mpp` path (raise); fix the HEST branch to prefer a finite embedded value.
