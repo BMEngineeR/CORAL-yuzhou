@@ -110,6 +110,15 @@ def _normalize_cyx(
     return image, canonical_channels
 
 
+def _expand_yx_to_cyx(
+    image: np.ndarray, channels: list[dict[str, Any]]
+) -> tuple[np.ndarray, list[CanonicalChannel]]:
+    """A single grayscale plane ``(Y, X)`` becomes one channel ``(1, Y, X)``."""
+    _require_ndim(image, 2, "YX")
+    canonical_channels = _build_canonical_channels(channels, expected_len=1)
+    return image[np.newaxis, :, :], canonical_channels
+
+
 def _assert_yx_stack(
     image: np.ndarray, channels: list[dict[str, Any]]
 ) -> tuple[np.ndarray, list[CanonicalChannel]]:
@@ -203,6 +212,7 @@ def _assume_qyx_is_cyx(
 
 _DISPATCHER: dict[str, _DispatcherFn] = {
     "CYX": _normalize_cyx,
+    "IYX": _normalize_cyx,  # tifffile's generic index axis for stacked planes
     "TCYX": _flatten_tcyx_to_cyx,
     "ZCYX": _flatten_tcyx_to_cyx,
     "TYXC": _flatten_tyxc_to_cyx,
@@ -211,6 +221,7 @@ _DISPATCHER: dict[str, _DispatcherFn] = {
     "QYX": _assume_qyx_is_cyx,
     "YXC": _transpose_yxc_to_cyx,
     "YXS": _transpose_yxc_to_cyx,  # tifffile reports YXS for photometric=rgb
+    "YX": _expand_yx_to_cyx,  # single grayscale plane (e.g. a nuclear stain)
     "YX*": _assert_yx_stack,
 }
 

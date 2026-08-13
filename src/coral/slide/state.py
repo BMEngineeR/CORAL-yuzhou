@@ -109,11 +109,12 @@ class TasksBlock(BaseModel):
 
     ``ingest`` and ``cells`` are **single** tasks (a slide has one of
     each), so each is a ``TaskState`` (``pending`` until run). ``tissue``,
-    ``patch``, and ``extract`` are **dicts keyed by config**, because a
-    slide can hold many of each — one tissue mask per method
+    ``patch``, ``extract``, and ``st`` are **dicts keyed by config**, because
+    a slide can hold many of each — one tissue mask per method
     (``tissue["otsu"]``, ``tissue["carta"]``), one patch set per
-    (mpp, size), one extract set per (config, encoder, panel). They
-    start empty (``{}``) and gain a keyed entry per run.
+    (mpp, size), one extract set per (config, encoder, panel), one ST record
+    per technology (``st["visium"]``, ``st["g4x"]``). They start empty
+    (``{}``) and gain a keyed entry per run.
     """
 
     ingest: TaskState = Field(default_factory=TaskState)
@@ -121,6 +122,7 @@ class TasksBlock(BaseModel):
     patch: dict[str, TaskState] = Field(default_factory=dict)
     cells: TaskState = Field(default_factory=TaskState)
     extract: dict[str, TaskState] = Field(default_factory=dict)
+    st: dict[str, TaskState] = Field(default_factory=dict)
 
 
 class SlideState(BaseModel):

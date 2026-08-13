@@ -631,6 +631,48 @@ def _resolve_nuclear_channel(
 # B&C dialog can still auto-adjust. Nuclear channel starts active only.
 _OMERO_WINDOW_MAX = 65535.0
 _OMERO_WINDOW_END = 4096.0
+
+
+def _dtype_window_max(dtype: Any) -> float:
+    """The omero display-window ceiling for a pixel dtype.
+
+    255 for uint8, 65535 for uint16, the integer max for other integer
+    dtypes, else the conservative uint16 fallback. Used so an RGB image's
+    window is the full encoded range rather than a fluorescence guess.
+    """
+    dt = np.dtype(dtype)
+    if dt == np.uint8:
+        return 255.0
+    if dt == np.uint16:
+        return 65535.0
+    if np.issubdtype(dt, np.integer):
+        return float(np.iinfo(dt).max)
+    return _OMERO_WINDOW_MAX
+
+
+#: Percentiles for a measured display window — a robust contrast stretch that
+#: ignores the sparse bright outliers a hard max would be pinned to.
+_WINDOW_LO_PCT = 0.5
+_WINDOW_HI_PCT = 99.5
+
+
+def _measured_window(plane: np.ndarray) -> tuple[float, float] | None:
+    """A measured ``(start, end)`` display window for one channel plane.
+
+    The low/high percentiles of the finite pixels, so a channel whose signal
+    sits in the bottom few percent of the dtype range still opens looking
+    right instead of as a black rectangle. ``None`` when the plane has no
+    finite pixels or is flat.
+    """
+    a = np.asarray(plane)
+    a = a[np.isfinite(a)]
+    if a.size == 0:
+        return None
+    lo = float(np.percentile(a, _WINDOW_LO_PCT))
+    hi = float(np.percentile(a, _WINDOW_HI_PCT))
+    if hi <= lo:
+        return None
+    return (lo, hi)
 _OMERO_COLORS = (
     "0000FF",  # blue — typical nuclear
     "00FF00",
@@ -726,10 +768,14 @@ def _write_ngff_external_attrs(
     mpp: float,
     *,
     nuclear_marker: str | None = None,
+    level_shapes: list[tuple[int, ...]] | None = None,
+    dtype: Any = None,
+    windows: dict[int, tuple[float, float]] | None = None,
+    channel_colors: dict[int, str] | None = None,
 ) -> None:
     """Write additive OME-NGFF 0.4 attrs for external readers (QuPath).
 
-    Sets ``multiscales`` (axes ``c,y,x`` + level-0 scale), ``omero``
+    Sets ``multiscales`` (axes ``c,y,x`` + per-level scale), ``omero``
     (labels / display), and ``OME/METADATA.ome.xml`` (channel names +
     PhysicalSize for Bio-Formats). Does not touch CORAL custom attrs or
     pixel data.
@@ -740,8 +786,33 @@ def _write_ngff_external_attrs(
         mpp: Isotropic microns-per-pixel for the y/x scale transform.
         nuclear_marker: Channel label to mark ``active`` in omero (others
             off). When ``None``, channel 0 is active.
+        level_shapes: Shapes of every pyramid level, level 0 first, so the
+            multiscales lists one dataset per level (scale doubles each
+            step). When ``None``, only level ``"0"`` is listed (the
+            proteomics default, which materializes only level 0).
+        dtype: Pixel dtype; sets the omero window ceiling via
+            :func:`_dtype_window_max`. When ``None``, the uint16 fallback.
+        windows: Per-channel ``{idx: (start, end)}`` display window (e.g.
+            measured percentiles, or the full range for an RGB image). When
+            ``None``, the conservative fluorescence default is used.
+        channel_colors: Per-channel ``{idx: "RRGGBB"}`` overrides (e.g. R/G/B
+            for an RGB image). Channels absent from the dict fall back to the
+            palette. When ``None``, the palette is used throughout.
     """
     mpp_f = float(mpp)
+    n_levels = len(level_shapes) if level_shapes else 1
+    datasets = [
+        {
+            "path": str(level),
+            "coordinateTransformations": [
+                {
+                    "type": "scale",
+                    "scale": [1.0, mpp_f * (2**level), mpp_f * (2**level)],
+                },
+            ],
+        }
+        for level in range(n_levels)
+    ]
     root.attrs["multiscales"] = [
         {
             "version": "0.4",
@@ -750,17 +821,7 @@ def _write_ngff_external_attrs(
                 {"name": "y", "type": "space", "unit": "micrometer"},
                 {"name": "x", "type": "space", "unit": "micrometer"},
             ],
-            "datasets": [
-                {
-                    "path": "0",
-                    "coordinateTransformations": [
-                        {
-                            "type": "scale",
-                            "scale": [1.0, mpp_f, mpp_f],
-                        },
-                    ],
-                }
-            ],
+            "datasets": datasets,
         }
     ]
     nuclear_key = (nuclear_marker or "").strip().lower()
@@ -770,21 +831,30 @@ def _write_ngff_external_attrs(
             if str(name).strip().lower() == nuclear_key:
                 active_idx = i
                 break
+    window_max = _dtype_window_max(dtype) if dtype is not None else _OMERO_WINDOW_MAX
+
+    def _window(i: int) -> dict[str, float]:
+        if windows is not None and i in windows:
+            start, end = windows[i]
+        else:
+            start, end = 0.0, _OMERO_WINDOW_END
+        return {"min": 0.0, "max": window_max, "start": float(start), "end": float(end)}
+
+    def _color(i: int) -> str:
+        if channel_colors is not None and i in channel_colors:
+            return channel_colors[i]
+        return _OMERO_COLORS[i % len(_OMERO_COLORS)]
+
     root.attrs["omero"] = {
         "channels": [
             {
                 "label": name,
-                "color": _OMERO_COLORS[i % len(_OMERO_COLORS)],
+                "color": _color(i),
                 "active": i == active_idx,
                 "coefficient": 1.0,
                 "family": "linear",
                 "inverted": False,
-                "window": {
-                    "min": 0.0,
-                    "max": _OMERO_WINDOW_MAX,
-                    "start": 0.0,
-                    "end": _OMERO_WINDOW_END,
-                },
+                "window": _window(i),
             }
             for i, name in enumerate(markers)
         ]
