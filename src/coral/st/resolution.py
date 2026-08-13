@@ -27,7 +27,18 @@ cross-check proceed without confirmation.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
+
+
+def is_valid_pixel_size(value: object) -> bool:
+    """A usable pixel size is a finite, strictly positive number.
+
+    Guards every entry point so a negative / zero / NaN / inf value can never
+    reach the store — the guardrail verifies provenance, this verifies the
+    number itself.
+    """
+    return isinstance(value, (int, float)) and math.isfinite(value) and value > 0
 
 #: Instrument-fixed pixel sizes (µm/px). ``None`` means the value is specific
 #: to the individual scan (Visium/HEST H&E resolution) and MUST be read from
@@ -123,14 +134,22 @@ def resolve_pixel_size(
     reg = PLATFORM_PIXEL_SIZE_UM.get(technology, {"default": None, "note": ""})
     default = reg["default"]
 
-    if read_value:
+    # A value that was provided but is not a positive finite number is not a
+    # value at all — ignore it (never store it) and fall through to the default
+    # / unknown path, noting that a garbage read was dropped.
+    provided_invalid = read_value is not None and not is_valid_pixel_size(read_value)
+    dropped = (
+        f" (ignored invalid read value {read_value!r})" if provided_invalid else ""
+    )
+
+    if is_valid_pixel_size(read_value):
         checks: list[CrossCheck] = []
         for name, cv in (crosses or []):
-            if cv:
+            if is_valid_pixel_size(cv):
                 checks.append(
                     CrossCheck(name, float(cv), abs(read_value / cv - 1) <= tolerance)
                 )
-        if default:
+        if is_valid_pixel_size(default):
             checks.append(
                 CrossCheck(
                     "platform_default",
@@ -168,9 +187,9 @@ def resolve_pixel_size(
             crosschecks=[],
             needs_confirm=True,
             reason=(
-                f"the data carried no pixel size, so the {technology} platform "
-                f"default {default} µm/px was used — confirm it applies to this "
-                f"sample"
+                f"the data carried no usable pixel size, so the {technology} "
+                f"platform default {default} µm/px was used — confirm it applies "
+                f"to this sample{dropped}"
             ),
         )
 
@@ -183,8 +202,8 @@ def resolve_pixel_size(
         crosschecks=[],
         needs_confirm=True,
         reason=(
-            f"no pixel size in the data and no platform default for "
-            f"{technology}; pass --mpp"
+            f"no usable pixel size in the data and no platform default for "
+            f"{technology}; pass --mpp{dropped}"
         ),
     )
 

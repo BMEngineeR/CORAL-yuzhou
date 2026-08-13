@@ -172,6 +172,12 @@ def ingest_one(
     # ---- resolve + verify the pixel size (non-silent, like the marker guardrail)
     name = sample_id or sample_dir.name
     if mpp is not None:
+        from coral.st.resolution import is_valid_pixel_size
+
+        if not is_valid_pixel_size(mpp):
+            raise ValueError(
+                f"--mpp must be a positive finite number of µm/px, got {mpp!r}"
+            )
         ps = PixelSize(
             technology=resolved, value=float(mpp), tier="user",
             source="--mpp override", needs_confirm=False,
@@ -349,11 +355,20 @@ def _read(
             "hest_pooling_status": pooling_status,
             "hest_pooling_evidence": pooling_evidence,
         }
+        from coral.st.resolution import is_valid_pixel_size
+
+        # ``pixel_size_um_embedded`` is NaN when the source image carried no
+        # resolution — NaN is truthy, so ``embedded or estimated`` would keep
+        # the NaN. Prefer the embedded value only when it is a real number.
+        embedded = meta.get("pixel_size_um_embedded")
+        hest_px = (
+            embedded
+            if is_valid_pixel_size(embedded)
+            else meta.get("pixel_size_um_estimated")
+        )
         return (
             adata, "fullres_pixels", HEST_OBS_UNITS.get(actual, "spot"),
-            details, files.image,
-            meta.get("pixel_size_um_embedded") or meta.get("pixel_size_um_estimated"),
-            actual,
+            details, files.image, hest_px, actual,
         )
 
     if technology == "G4X":

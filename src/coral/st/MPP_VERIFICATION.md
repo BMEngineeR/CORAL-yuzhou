@@ -121,15 +121,17 @@ several faces: **nothing validates that the value is a finite POSITIVE number.**
 The guardrail verifies provenance and agreement, but never sanity of the value
 itself, so garbage flows straight to the store.
 
-| # | sev | where | problem | observed |
-|---|-----|-------|---------|----------|
-| P1 | HIGH | `resolve_pixel_size` | negative / NaN / inf `read_value` accepted, `needs_confirm=False` | `-0.5 → value=-0.5`, `nan → nan`, `inf → inf` |
-| P2 | MED | same | `read_value == 0.0` treated as "no value" (falsy `if read_value:`) | `tier=unknown` |
-| P3 | HIGH | `ingest_one` `--mpp` | override not validated | `--mpp -0.5/nan/inf` → store gets it verbatim |
-| P3b | HIGH | same | `--mpp 0` silently becomes `1.0` (falsy `resolved_px`) | store `mpp = 1.0` |
-| P4 | HIGH | HEST branch + resolver | `embedded (NaN) or estimated` short-circuits to NaN; resolver proceeds | store `mpp = NaN` |
-| P5 | MED | cross-checks | circular default check: read value == the platform constant and no independent cross → "value vs itself" trivially agrees | misleading audit trail (not a wrong decision) |
+| # | sev | where | problem | status |
+|---|-----|-------|---------|--------|
+| P1 | HIGH | `resolve_pixel_size` | negative / NaN / inf `read_value` accepted, `needs_confirm=False` | **fixed** — invalid read ignored → default/unknown, needs_confirm |
+| P2 | MED | same | `read_value == 0.0` treated as "no value" (falsy `if read_value:`) | **fixed** — validated by `is_valid_pixel_size`, not truthiness |
+| P3 | HIGH | `ingest_one` `--mpp` | override not validated | **fixed** — `--mpp` raises unless finite & > 0 |
+| P3b | HIGH | same | `--mpp 0` silently becomes `1.0` | **fixed** — `--mpp 0` now rejected |
+| P4 | HIGH | HEST branch + resolver | `embedded (NaN) or estimated` short-circuits to NaN | **fixed** — HEST prefers a finite embedded, else estimated (3.2357) |
+| P5 | MED | cross-checks | default check looks circular when read == the platform constant | **not a bug** — the platform-default comparison is a real check that catches a garbage instrument read (e.g. 1e9 vs 0.2125); it only *looks* circular when the read equals the default, which is the correct case |
 
-Planned fix: a single `math.isfinite(v) and v > 0` gate in `resolve_pixel_size`
-(ignore an invalid read → fall to default/unknown, needs_confirm) and on the
-`--mpp` path (raise); fix the HEST branch to prefer a finite embedded value.
+The fix is a single guard, `is_valid_pixel_size(v)` (finite and strictly
+positive), applied at every entry point: the resolver ignores an invalid read
+(falls to default/unknown, needs_confirm), the `--mpp` path raises, and the
+HEST branch prefers a finite embedded value over NaN. Re-running the
+brute-force suite after the fix reports zero remaining problems.
