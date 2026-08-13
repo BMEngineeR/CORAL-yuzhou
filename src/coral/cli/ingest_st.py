@@ -103,6 +103,23 @@ def ingest_st(
             "resolution."
         ),
     ),
+    mpp: float | None = typer.Option(
+        None,
+        "--mpp",
+        help=(
+            "Explicit full-resolution pixel size (µm/px) that overrides the "
+            "resolver. Use it to confirm a value the ingest refused to guess."
+        ),
+    ),
+    confirm_mpp: bool = typer.Option(
+        False,
+        "--confirm-mpp",
+        help=(
+            "Accept the resolver's pixel size even when it is not confident "
+            "(fell back to a platform default, or a cross-check disagreed). "
+            "Without --mpp or this flag, an unconfident mpp blocks the ingest."
+        ),
+    ),
 ) -> None:
     """Convert spatial transcriptomics samples into canonical OME-Zarr stores.
 
@@ -194,6 +211,8 @@ def ingest_st(
                     technology=technology,
                     image=image,
                     image_scale=image_scale,
+                    mpp=mpp,
+                    confirm_mpp=confirm_mpp,
                 )
                 written += 1
                 logger.info("        -> %s", out.name)

@@ -123,16 +123,19 @@ def _build_image(files: G4XFiles) -> tuple[np.ndarray, list[str]]:
 
     blocks: list[np.ndarray] = []
     names: list[str] = []
+    mpp: float | None = None
     if files.nuclear_image is not None:
-        raw, ch, _, meta = read_ometiff(files.nuclear_image)
+        raw, ch, mpp_n, meta = read_ometiff(files.nuclear_image)
         img, _cc = harmonize_to_canonical(raw, ch, meta["axes"])
         blocks.append(img)
         names.append(_NUCLEAR_NAME)
+        mpp = mpp or mpp_n
     if files.protein_dir is not None:
-        raw, ch, _, meta = read_channel_tiff_dir(files.protein_dir)
+        raw, ch, mpp_p, meta = read_channel_tiff_dir(files.protein_dir)
         img, cc = harmonize_to_canonical(raw, ch, meta["axes"])
         blocks.append(img)
         names.extend(str(c.raw) for c in cc)
+        mpp = mpp or mpp_p
 
     if not blocks:
         raise FileNotFoundError(
@@ -146,7 +149,7 @@ def _build_image(files: G4XFiles) -> tuple[np.ndarray, list[str]]:
         )
     image = np.concatenate(blocks, axis=0)
     logger.info("      G4X image: %s, channels=%s", image.shape, names)
-    return image, names
+    return image, names, mpp
 
 
 def read_g4x_sample(files: G4XFiles) -> tuple[Any, np.ndarray, dict]:
@@ -191,7 +194,7 @@ def read_g4x_sample(files: G4XFiles) -> tuple[Any, np.ndarray, dict]:
         ]
         adata.obsm["protein"] = prot.to_numpy(dtype=np.float32)
 
-    image, channel_names = _build_image(files)
+    image, channel_names, img_mpp = _build_image(files)
 
     run_meta: dict = {}
     if files.run_meta is not None:
@@ -211,8 +214,14 @@ def read_g4x_sample(files: G4XFiles) -> tuple[Any, np.ndarray, dict]:
         "transcripts_path": (
             str(files.transcripts) if files.transcripts else None
         ),
-        "pixel_size_um_estimated": None,
     }
+    if img_mpp:
+        # a full G4X export carries PhysicalSize in its OME-XML; the subset's
+        # plain TIFFs do not, so this stays None and the resolver falls back to
+        # the platform default (0.3125), which then requires confirmation.
+        details["pixel_size_um"] = float(img_mpp)
+        details["pixel_size_source"] = "OME-XML PhysicalSizeX"
+        details["pixel_size_tier"] = "instrument"
     logger.info(
         "      G4X: %d cells x %d genes, %d protein markers",
         adata.n_obs, adata.n_vars, len(protein_names),

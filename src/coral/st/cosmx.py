@@ -138,6 +138,44 @@ def _channel_names(layout: CosmxLayout, n_planes: int) -> list[str]:
     return [f"c{i}" for i in range(n_planes)]
 
 
+def _cosmx_pixel_size(layout: CosmxLayout) -> tuple[float | None, str, float | None]:
+    """CosMx pixel size (µm/px): instrument value + a geometry cross-check.
+
+    Reads ``ImPixel_nm`` from ``RunSummary/*_ExptConfig.txt`` (the instrument's
+    own value), and independently derives it from the FOV position file's paired
+    pixel/mm columns as a cross-check. Returns ``(value, source, cross_value)``.
+    """
+    import re
+
+    import pandas as pd
+
+    run_summary = (
+        layout.channel_dict.parent
+        if layout.channel_dict is not None
+        else layout.morphology2d_dir.parent.parent / "RunSummary"
+    )
+    value: float | None = None
+    source = "ExptConfig.txt:ImPixel_nm"
+    for cfg in run_summary.glob("*_ExptConfig.txt") if run_summary.is_dir() else []:
+        m = re.search(r"ImPixel_nm:\s*([\d.]+)", cfg.read_text(errors="ignore"))
+        if m:
+            value = float(m.group(1)) / 1000.0  # nm -> µm/px
+            break
+
+    cross: float | None = None
+    try:
+        fp = pd.read_csv(layout.fov_positions)
+        if {"x_global_px", "x_global_mm"}.issubset(fp.columns):
+            ratio = (fp["x_global_mm"] * 1000.0 / fp["x_global_px"]).replace(
+                [np.inf, -np.inf], np.nan
+            ).dropna()
+            if len(ratio):
+                cross = float(ratio.median())
+    except Exception:  # noqa: BLE001 — cross-check is best-effort
+        cross = None
+    return value, source, cross
+
+
 def _fov_tile(layout: CosmxLayout, fov: int) -> Path:
     hits = sorted(layout.morphology2d_dir.glob(f"*_F{fov:05d}.TIF")) + sorted(
         layout.morphology2d_dir.glob(f"*_F{fov:05d}.tif")
@@ -240,8 +278,13 @@ def read_cosmx_sample(layout: CosmxLayout) -> tuple[Any, np.ndarray, dict]:
             str(layout.transcripts) if layout.transcripts else None
         ),
         "fov_positions_path": str(layout.fov_positions),
-        "pixel_size_um_estimated": None,
     }
+    px, px_src, px_cross = _cosmx_pixel_size(layout)
+    if px is not None:
+        details["pixel_size_um"] = px
+        details["pixel_size_source"] = px_src
+        details["pixel_size_tier"] = "instrument"
+        details["pixel_size_crosses"] = [("fov_px_mm", px_cross)]
     logger.info(
         "      CosMx: %d cells x %d genes (%d control probes)",
         adata.n_obs, adata.n_vars, n_control,

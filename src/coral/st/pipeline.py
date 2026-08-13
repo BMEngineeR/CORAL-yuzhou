@@ -101,6 +101,8 @@ def ingest_one(
     image: Path | None = None,
     image_scale: float = 1.0,
     sample_id: str | None = None,
+    mpp: float | None = None,
+    confirm_mpp: bool = False,
 ) -> Path:
     """Read one sample and write it as a CORAL store.
 
@@ -112,11 +114,25 @@ def ingest_one(
             full-resolution one of its own.
         image_scale: Stored pixels per full-resolution pixel of ``image``.
         sample_id: Store name; defaults to the directory name.
+        mpp: Explicit full-resolution pixel size (µm/px) that OVERRIDES the
+            resolver — the user's confirmed value.
+        confirm_mpp: Accept the resolver's value even when it is not confident
+            (fell back to a platform default, or a cross-check disagreed).
+            Without ``mpp`` or this flag, an unconfident mpp blocks the ingest.
 
     Returns:
         The store path.
+
+    Raises:
+        MppNeedsConfirmation: When the resolved pixel size is not confident and
+            neither ``mpp`` nor ``confirm_mpp`` was given.
     """
     from coral.st.detect import detect_technology
+    from coral.st.resolution import (
+        MppNeedsConfirmation,
+        PixelSize,
+        resolve_pixel_size,
+    )
     from coral.st.store import write_st_store
     from coral.st.technology import (
         normalize_technology,
@@ -152,18 +168,39 @@ def ingest_one(
     else:
         pixels, channel_names = _image_array(Path(picked))
         source_image_str = str(Path(picked).resolve())
-    mpp = float(pixel_size or 0) / max(scale, 1e-12) if pixel_size else 1.0
+
+    # ---- resolve + verify the pixel size (non-silent, like the marker guardrail)
+    name = sample_id or sample_dir.name
+    if mpp is not None:
+        ps = PixelSize(
+            technology=resolved, value=float(mpp), tier="user",
+            source="--mpp override", needs_confirm=False,
+            reason="set explicitly by the user",
+        )
+    else:
+        ps = resolve_pixel_size(
+            resolved,
+            read_value=details.get("pixel_size_um", pixel_size),
+            read_source=details.get("pixel_size_source"),
+            read_tier=details.get("pixel_size_tier"),
+            crosses=details.get("pixel_size_crosses"),
+        )
+        if ps.needs_confirm and not confirm_mpp:
+            raise MppNeedsConfirmation(name, ps)
+    details = {**details, "pixel_size": ps.as_config()}
+    resolved_px = ps.value
+    mpp_store = float(resolved_px or 0) / max(scale, 1e-12) if resolved_px else 1.0
 
     return write_st_store(
         adata,
         pixels,
-        Path(job_dir) / f"{sample_id or sample_dir.name}.zarr",
+        Path(job_dir) / f"{name}.zarr",
         technology=resolved,
         coordinate_frame=frame,
         obs_unit=obs_unit,
-        mpp=mpp,
+        mpp=mpp_store,
         image_scale=scale,
-        pixel_size_um=pixel_size,
+        pixel_size_um=resolved_px,
         obs_diameter_um=observation_diameter_um(details),
         channel_names=channel_names,
         source={
@@ -172,6 +209,18 @@ def ingest_one(
             "technology_details": details,
         },
     )
+
+
+def _visium_hd_microns_per_pixel(sample_dir: Path) -> float | None:
+    """The ``microns_per_pixel`` Visium HD writes in its scalefactors JSON."""
+    for sf in sorted(Path(sample_dir).rglob("scalefactors_json.json")):
+        try:
+            value = json.loads(sf.read_text()).get("microns_per_pixel")
+        except (OSError, ValueError):
+            continue
+        if value:
+            return float(value)
+    return None
 
 
 def _read(
@@ -209,9 +258,16 @@ def _read(
         # The discoverer returns one entry per resolution. The finest is the
         # one a viewer wants; the others are aggregations of it.
         adata, details = read_visium_hd_sample(found[0])
+        # Visium HD writes the true pixel size in scalefactors_json — read it
+        # so the mpp resolver gets an instrument value instead of blocking.
+        px = _visium_hd_microns_per_pixel(sample_dir)
+        if px:
+            details["pixel_size_um"] = px
+            details["pixel_size_source"] = "scalefactors_json:microns_per_pixel"
+            details["pixel_size_tier"] = "instrument"
         return (
             adata, "fullres_pixels", details.get("selected_obs_unit", "spot"),
-            details, found[0].image, None, technology,
+            details, found[0].image, details.get("pixel_size_um"), technology,
         )
 
     if technology == "Xenium":
