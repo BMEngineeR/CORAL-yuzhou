@@ -173,7 +173,16 @@ def discover_xenium_files(
             f"input_dir must be an existing directory: {input_dir}"
         )
     alignment_path = _resolve(input_dir, alignment) or _first(
-        input_dir, ("*imagealignment.csv", "imagealignment.csv")
+        input_dir,
+        (
+            "*imagealignment.csv",
+            "imagealignment.csv",
+            # WTA / Atera exports name the affine ``*_he_alignment.csv`` (no
+            # "image"); match it too so the pre-computed matrix is used instead
+            # of falling back to VALIS registration.
+            "*_he_alignment.csv",
+            "*alignment.csv",
+        ),
     )
     optional = {
         "transcripts": (
