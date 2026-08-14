@@ -222,8 +222,31 @@ def read_g4x_sample(files: G4XFiles) -> tuple[Any, np.ndarray, dict]:
         details["pixel_size_um"] = float(img_mpp)
         details["pixel_size_source"] = "OME-XML PhysicalSizeX"
         details["pixel_size_tier"] = "instrument"
+    details["transcripts"] = _read_g4x_transcripts(files)
     logger.info(
         "      G4X: %d cells x %d genes, %d protein markers",
         adata.n_obs, adata.n_vars, len(protein_names),
     )
     return adata, image, details
+
+
+def _read_g4x_transcripts(files: G4XFiles) -> Any:
+    """Transcript points in image pixels (same frame as the cell centroids).
+
+    ``x_pixel_coordinate``/``y_pixel_coordinate`` are already in the image pixel
+    frame, so no transform is needed. ``gdna`` is the genomic-DNA control.
+    Returns ``None`` when the sample has no transcript table.
+    """
+    if files.transcripts is None:
+        return None
+    import pandas as pd
+
+    from coral.st.points import normalize_points
+
+    df = pd.read_csv(files.transcripts)
+    is_gene = df["gene_name"].astype(str) != "gdna"
+    return normalize_points(
+        df, x="x_pixel_coordinate", y="y_pixel_coordinate",
+        feature="gene_name", cell_id="cell_id", is_gene=is_gene.to_numpy(),
+        qv="confidence_score", z="z_level",
+    )

@@ -103,6 +103,7 @@ def ingest_one(
     sample_id: str | None = None,
     mpp: float | None = None,
     confirm_mpp: bool = False,
+    points: bool = True,
 ) -> Path:
     """Read one sample and write it as a CORAL store.
 
@@ -194,6 +195,9 @@ def ingest_one(
         if ps.needs_confirm and not confirm_mpp:
             raise MppNeedsConfirmation(name, ps)
     details = {**details, "pixel_size": ps.as_config()}
+    # The transcript points ride on ``details`` from the reader as a DataFrame;
+    # pull it out before ``details`` is JSON-serialized into config.json.
+    transcripts_df = details.pop("transcripts", None)
     resolved_px = ps.value
     mpp_store = float(resolved_px or 0) / max(scale, 1e-12) if resolved_px else 1.0
 
@@ -209,6 +213,7 @@ def ingest_one(
         pixel_size_um=resolved_px,
         obs_diameter_um=observation_diameter_um(details),
         channel_names=channel_names,
+        points=transcripts_df if points else None,
         source={
             "sample_dir": str(sample_dir.resolve()),
             "image": source_image_str,

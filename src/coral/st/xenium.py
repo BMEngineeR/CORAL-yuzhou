@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -18,6 +19,8 @@ import tifffile
 from scipy import sparse
 
 from coral.st.visium import _read_counts
+
+logger = logging.getLogger(__name__)
 
 CentroidAligner = Callable[
     [np.ndarray, Path, Path, Path, int, bool],
@@ -612,4 +615,34 @@ def read_xenium_sample(
     }
     if affine is not None:
         details["affine_dapi_to_he"] = affine.tolist()
+
+    # Transcript points, placed in the SAME frame as obsm["spatial"] so the
+    # store writer's _to_pixels bakes points and cells identically. Native
+    # microns and the vendor affine are supported; the VALIS branch (H&E image
+    # but no alignment CSV) is skipped — warping millions of points through the
+    # registrar is a separate, heavier step.
+    if files.transcripts is None:
+        details["transcripts"] = None
+    elif files.image is not None and affine is None:
+        logger.warning("transcripts skipped: VALIS registration branch")
+        details["transcripts"] = None
+    else:
+        from coral.st.points import normalize_points
+
+        tx = pd.read_parquet(
+            files.transcripts,
+            columns=[
+                "x_location", "y_location", "z_location",
+                "feature_name", "cell_id", "qv", "is_gene",
+            ],
+        )
+        xy = tx[["x_location", "y_location"]].to_numpy(dtype=float)
+        if affine is not None:  # microns -> H&E pixels, same as the centroids
+            xy = _apply_affine(xy, affine, pixel_size_um)
+        tx = tx.assign(_x=xy[:, 0], _y=xy[:, 1])
+        details["transcripts"] = normalize_points(
+            tx, x="_x", y="_y", feature="feature_name", cell_id="cell_id",
+            is_gene=tx["is_gene"].to_numpy(), qv="qv", z="z_location",
+        )
+        logger.info("      Xenium transcripts: %d points", len(tx))
     return adata, details

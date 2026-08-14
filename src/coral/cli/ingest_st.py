@@ -120,6 +120,15 @@ def ingest_st(
             "Without --mpp or this flag, an unconfident mpp blocks the ingest."
         ),
     ),
+    points: bool = typer.Option(
+        True,
+        "--points/--no-points",
+        help=(
+            "Ingest transcript points into points/transcripts.parquet for "
+            "imaging platforms that have them (Xenium, CosMx, G4X). On by "
+            "default; use --no-points to skip (a full Xenium is ~700M points)."
+        ),
+    ),
 ) -> None:
     """Convert spatial transcriptomics samples into canonical OME-Zarr stores.
 
@@ -213,6 +222,7 @@ def ingest_st(
                     image_scale=image_scale,
                     mpp=mpp,
                     confirm_mpp=confirm_mpp,
+                    points=points,
                 )
                 written += 1
                 logger.info("        -> %s", out.name)

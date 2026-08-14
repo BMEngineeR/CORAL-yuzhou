@@ -323,6 +323,7 @@ def write_st_store(
     obs_diameter_um: float | None = None,
     channel_names: list[str] | None = None,
     source: dict[str, Any] | None = None,
+    points: Any = None,  # noqa: ANN401 — an optional transcript-points DataFrame
 ) -> Path:
     """Write one ST sample as a CORAL store.
 
@@ -509,6 +510,35 @@ def write_st_store(
         if _prev_nullable is not None:
             _ad.settings.allow_write_nullable_strings = _prev_nullable
 
+    # ---- points/ sidecar: transcript points, additive, frozen core untouched
+    # Baked with the SAME _to_pixels as obsm["spatial"], so points and cells land
+    # in one store-pixel frame. A top-level points/ dir, sibling of st/.
+    points_config = None
+    if points is not None and len(points):
+        placed_pts, _ = _to_pixels(
+            points[["x", "y"]].to_numpy(dtype="float64"),
+            frame=coordinate_frame,
+            image_scale=image_scale,
+            pixel_size_um=pixel_size_um,
+        )
+        pts = points.copy()
+        pts["x"] = placed_pts[:, 0].astype("float32")
+        pts["y"] = placed_pts[:, 1].astype("float32")
+        points_dir = out_path / "points"
+        points_dir.mkdir(parents=True, exist_ok=True)
+        pts.to_parquet(points_dir / "transcripts.parquet", index=False)
+        n_genes = int(pts["is_gene"].sum()) if "is_gene" in pts else int(len(pts))
+        points_config = {
+            "n_points": int(len(pts)),
+            "n_genes": n_genes,
+            "feature_column": "feature_name",
+            "path": "points/transcripts.parquet",
+        }
+        logger.info(
+            "      wrote %d transcript points (%d gene) to points/",
+            len(pts), n_genes,
+        )
+
     atomic_write_json(record / CONFIG_FILE, {
         "st_schema_version": ST_SCHEMA_VERSION,
         "technology": technology,
@@ -519,6 +549,7 @@ def write_st_store(
         "pixel_size_um_fullres": pixel_size_um,
         "mpp": float(mpp),
         "coordinates": applied,
+        "points": points_config,
         "source": source or {},
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     })
@@ -531,9 +562,15 @@ def write_st_store(
     # differ for "Spatial Transcriptomics" ("spatial transcriptomics" against
     # "spatial_transcriptomics"), and anything joining the state ledger to the
     # records on disk would have needed both spellings.
+    st_outputs = {
+        "table": f"{ST_GROUP}/{record.name}",
+        "config": f"{ST_GROUP}/{record.name}/{CONFIG_FILE}",
+    }
+    if points_config is not None:
+        st_outputs["points"] = points_config["path"]
     state.tasks.st[record.name] = type(state.tasks.ingest)(
         status="completed",
-        outputs={"table": f"{ST_GROUP}/{record.name}", "config": f"{ST_GROUP}/{record.name}/{CONFIG_FILE}"},
+        outputs=st_outputs,
     )
     state.meta.dimensions = (int(image.shape[1]), int(image.shape[2]))
     state.meta.n_markers = int(image.shape[0])

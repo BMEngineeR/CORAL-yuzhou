@@ -285,8 +285,39 @@ def read_cosmx_sample(layout: CosmxLayout) -> tuple[Any, np.ndarray, dict]:
         details["pixel_size_source"] = px_src
         details["pixel_size_tier"] = "instrument"
         details["pixel_size_crosses"] = [("fov_px_mm", px_cross)]
+    details["transcripts"] = _read_cosmx_transcripts(layout, x_off)
     logger.info(
         "      CosMx: %d cells x %d genes (%d control probes)",
         adata.n_obs, adata.n_vars, n_control,
     )
     return adata, mosaic, details
+
+
+def _read_cosmx_transcripts(layout: CosmxLayout, x_off: dict[int, int]) -> Any:
+    """Transcript points in the compact-mosaic frame (local px + FOV offset).
+
+    Uses ``x_local_px``/``y_local_px`` and the same per-FOV offsets as the cell
+    centroids, so points and cells share the compact-mosaic pixel frame. Returns
+    ``None`` when the sample has no transcript file.
+    """
+    if layout.transcripts is None:
+        return None
+    import pandas as pd
+
+    from coral.st.points import normalize_points
+
+    df = pd.read_csv(
+        layout.transcripts,
+        usecols=["fov", "cell", "x_local_px", "y_local_px", "z", "target"],
+    )
+    df = df[df["fov"].isin(x_off)]
+    off = df["fov"].map(x_off).to_numpy(dtype="float64")
+    df = df.assign(
+        _x=df["x_local_px"].to_numpy("float64") + off,
+        _y=df["y_local_px"].to_numpy("float64"),
+    )
+    is_gene = ~df["target"].astype(str).str.lower().str.startswith(_CONTROL_PREFIXES)
+    return normalize_points(
+        df, x="_x", y="_y", feature="target", cell_id="cell",
+        is_gene=is_gene.to_numpy(), z="z",
+    )
