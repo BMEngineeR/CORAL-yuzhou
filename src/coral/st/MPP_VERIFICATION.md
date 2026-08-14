@@ -108,11 +108,24 @@ Every store's `config.json` gets a `pixel_size` provenance block under
   the resolver still reports the morphology `pixel_size` (0.2125). The H&E mpp
   is `morphology_mpp × alignment_scale` (≈0.274 here). mpp should follow the
   **root image**, not the morphology frame. Not yet wired.
-- ⚠ **HEST** — `pixel_size_um_embedded` is `NaN`, and `NaN or estimated`
-  short-circuits to `NaN` (NaN is truthy in Python), so HEST currently stores
-  `mpp = NaN`. The `pixel_size_um_estimated` (3.2357) should be used instead.
+- ⚠ **HEST — assigned to Cristina.** HEST writes `pixel_size_um_embedded = NaN`
+  whenever the source image carries no embedded resolution. This is **genuine
+  HEST data, not a coral artifact** — verified in the staged sample **NCBI680**'s
+  raw `hest/raw/metadata.json`, which literally contains
+  `"pixel_size_um_embedded": NaN` (HEST emits bare `NaN` tokens; the same appears
+  for `organ`, `oncotree_code`, `patient`, `license`). coral no longer stores
+  `NaN` (the reader now falls back to `pixel_size_um_estimated`, 3.2357 µm/px for
+  NCBI680 — see P4 below), **but that estimate is a tier-3 value HEST derives
+  from spot geometry**, not a measured resolution.
+  **Action (Cristina):** confirm the HEST `pixel_size_um_estimated` fallback is
+  trustworthy for HEST samples generally, and decide whether HEST needs a more
+  robust pixel-size source (e.g. from the original Visium bundle) or should carry
+  a lower-confidence flag on `mpp`. HEST is Cristina's area (she staged the ESB
+  HEST tutorial data).
 
-The first three are done; the last three are known, isolated follow-ups.
+The CosMx / Visium HD / G4X items are done; the Visium-convention, Xenium-H&E,
+and HEST items are known follow-ups (HEST owned by Cristina, Visium/Xenium by
+Anurag).
 
 ## Known issues from brute-force testing
 
